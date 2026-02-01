@@ -1,0 +1,151 @@
+<!DOCTYPE html> 
+<html lang="ru"> 
+<head> 
+    <meta charset="UTF-8"> 
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"> 
+    <title>Крестики-Нолики Online</title> 
+    <link rel="stylesheet" href="/public/style.css"> 
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"> 
+</head> 
+<body> 
+    <div class="container"> 
+        <header> 
+            <h1><i class="fas fa-gamepad"></i> Крестики-Нолики Online</h1> 
+            <p class="subtitle">Играйте с друзьями в реальном времени</p> 
+        </header> 
+ 
+        <main> 
+            <div id="loginScreen" class="screen active"> 
+                <div class="card"> 
+                    <h2><i class="fas fa-user"></i> Введите ваше имя</h2> 
+                    <div class="form-group"> 
+                        <input type="text" id="playerName" placeholder="Ваше имя" maxlength="15"> 
+                    </div> 
+                    <div class="button-group"> 
+                        <button id="createRoomBtn" class="btn primary"> 
+                            <i class="fas fa-plus-circle"></i> Создать комнату 
+                        </button> 
+                        <button id="joinRoomBtn" class="btn secondary"> 
+                            <i class="fas fa-sign-in-alt"></i> Присоединиться к комнате 
+                        </button> 
+                    </div> 
+                </div> 
+            </div> 
+ 
+            <div id="createRoomScreen" class="screen"> 
+                <div class="card"> 
+                    <h2><i class="fas fa-home"></i> Создание комнаты</h2> 
+                    <p>Ваше имя: <span id="createPlayerName"></span></p> 
+                    <div class="loading" id="creatingRoom"> 
+                        <div class="spinner"></div> 
+                        <p>Создание комнаты...</p> 
+                    </div> 
+                    <div id="roomCreated" class="hidden"> 
+                        <div class="success-message"> 
+                            <i class="fas fa-check-circle"></i> 
+                            <p>Комната успешно создана!</p> 
+                        </div> 
+                        <div class="room-info"> 
+                            <p>ID комнаты: <span id="roomIdDisplay" class="room-id"></span></p> 
+                            <p>Поделитесь этим ID с другом</p> 
+                            <button id="copyRoomIdBtn" class="btn small"> 
+                                <i class="fas fa-copy"></i> Скопировать ID 
+                            </button> 
+                        </div> 
+                        <div class="waiting-message"> 
+                            <div class="spinner small"></div> 
+                            <p>Ожидание второго игрока...</p> 
+                        </div> 
+                        <button id="backToLoginFromCreate" class="btn secondary"> 
+                            <i class="fas fa-arrow-left"></i> Назад 
+                        </button> 
+                    </div> 
+                </div> 
+            </div> 
+ 
+            <div id="joinRoomScreen" class="screen"> 
+                <div class="card"> 
+                    <h2><i class="fas fa-door-open"></i> Присоединение к комнате</h2> 
+                    <p>Ваше имя: <span id="joinPlayerName"></span></p> 
+                    <div class="form-group"> 
+                        <input type="text" id="roomIdInput" placeholder="Введите ID комнаты" maxlength="6"> 
+                    </div> 
+                    <div class="button-group"> 
+                        <button id="confirmJoinBtn" class="btn primary"> 
+                            <i class="fas fa-sign-in-alt"></i> Присоединиться 
+                        </button> 
+                        <button id="backToLoginFromJoin" class="btn secondary"> 
+                            <i class="fas fa-arrow-left"></i> Назад 
+                        </button> 
+                    </div> 
+                    <div id="joinError" class="error-message hidden"> 
+                        <i class="fas fa-exclamation-circle"></i> 
+                        <p></p> 
+                    </div> 
+                </div> 
+            </div> 
+ 
+            <div id="gameScreen" class="screen"> 
+                <div class="game-header"> 
+                    <div class="room-info"> 
+                        <p><i class="fas fa-home"></i> Комната: <span id="currentRoomId" class="room-id"></span></p> 
+                        <button id="copyGameRoomIdBtn" class="btn small"> 
+                            <i class="fas fa-copy"></i> Скопировать ID 
+                        </button> 
+                    </div> 
+ 
+                    <div class="players-info"> 
+                        <div class="player player1"> 
+                            <div class="player-symbol">X</div> 
+                            <div class="player-name">Игрок 1</div> 
+                            <div class="player-status" id="player1Status"></div> 
+                        </div> 
+ 
+                        <div class="vs">VS</div> 
+ 
+                        <div class="player player2"> 
+                            <div class="player-symbol">O</div> 
+                            <div class="player-name">Ожидание...</div> 
+                            <div class="player-status" id="player2Status"></div> 
+                        </div> 
+                    </div> 
+ 
+                    <div class="game-status"> 
+                        <p id="currentTurnMessage">Ожидание второго игрока...</p> 
+                        <p id="gameResultMessage" class="hidden"></p> 
+                    </div> 
+                </div> 
+ 
+                <div class="game-board-container"> 
+                    <div class="game-board" id="gameBoard"> 
+                        <\!-- Поле игры будет здесь --> 
+                    </div> 
+ 
+                    <div class="game-controls"> 
+                        <button id="resetGameBtn" class="btn primary"> 
+                            <i class="fas fa-redo"></i> Новая игра 
+                        </button> 
+                        <button id="leaveRoomBtn" class="btn secondary"> 
+                            <i class="fas fa-sign-out-alt"></i> Покинуть комнату 
+                        </button> 
+                    </div> 
+                </div> 
+            </div> 
+        </main> 
+ 
+        <footer> 
+            <p>Крестики-Нолики Online &copy; 2024</p> 
+            <p class="instructions"> 
+                <i class="fas fa-info-circle"></i> Создайте комнату или присоединитесь по ID 
+            </p> 
+        </footer> 
+    </div> 
+ 
+    <div class="notification" id="notification"> 
+        <p></p> 
+    </div> 
+ 
+    <script src="/socket.io/socket.io.js"></script> 
+    <script src="/public/script.js"></script> 
+</body> 
+</html> 
