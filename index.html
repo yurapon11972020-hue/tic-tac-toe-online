@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Крестики-нолики · Комнаты</title>
     <style>
+        /* Стили полностью сохранены из предыдущей версии */
         * {
             box-sizing: border-box;
             margin: 0;
@@ -384,7 +385,7 @@
 <script type="module">
     // ========== FIREBASE ==========
     import { initializeApp } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-app.js";
-    import { getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot, collection, query, getDocs } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-firestore.js";
+    import { getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot, collection, query, getDocs, runTransaction } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-firestore.js";
 
     const firebaseConfig = {
         apiKey: "AIzaSyDsiylf6dcAs8rstgLuO8ea6XHWruBKrJU",
@@ -405,7 +406,7 @@
     let currentRoomId = null;
     let roomUnsubscribe = null;
     let mySymbol = null;
-    let isLeaving = false; // флаг для предотвращения повторного выхода
+    let isLeaving = false;
 
     // Элементы DOM
     const lobbyDiv = document.getElementById('lobby');
@@ -457,7 +458,7 @@
         mySymbol = null;
         lobbyDiv.style.display = 'block';
         gameDiv.style.display = 'none';
-        loadRooms(); // подписка на список комнат
+        loadRooms();
     }
 
     function showGame(roomId) {
@@ -474,9 +475,7 @@
             const data = docSnap.data();
             if (data.player1Id === myId || data.player2Id === myId) {
                 const roomId = docSnap.id;
-                // Если мы уже в этой комнате, не делаем ничего
                 if (currentRoomId === roomId) return true;
-                // Если мы в другой комнате, сначала выйдем
                 if (currentRoomId) await leaveRoom();
 
                 currentRoomId = roomId;
@@ -542,116 +541,127 @@
         });
     }
 
-    // ========== ВХОД В КОМНАТУ ==========
+    // ========== ВХОД В КОМНАТУ (С ТРАНЗАКЦИЕЙ) ==========
     async function joinRoom(roomId) {
-        // Если уже в этой комнате — ничего не делаем
         if (currentRoomId === roomId) return;
-        // Если в другой комнате — выходим
         if (currentRoomId) await leaveRoom();
 
         const roomRef = doc(db, 'rooms', roomId);
-        const roomSnap = await getDoc(roomRef);
-        if (!roomSnap.exists()) return;
 
-        let data = roomSnap.data();
+        try {
+            await runTransaction(db, async (transaction) => {
+                const roomDoc = await transaction.get(roomRef);
+                if (!roomDoc.exists()) throw new Error("Комната не существует");
 
-        // Проверка: не занята ли комната нами же (дублирующая сессия)
-        if (data.player1Id === myId || data.player2Id === myId) {
-            // Мы уже числимся в комнате (возможно, после обновления страницы)
-            // Просто подписываемся и показываем игру
-            currentRoomId = roomId;
+                const data = roomDoc.data();
+
+                // Если мы уже числимся в комнате (возможно, после обновления) – просто подписываемся
+                if (data.player1Id === myId || data.player2Id === myId) {
+                    // Но в транзакции мы не можем подписаться, просто выходим с успехом
+                    // (на самом деле подписка установится после транзакции)
+                    return { alreadyInRoom: true, roomId };
+                }
+
+                // Очистка призраков внутри транзакции
+                const updates = {};
+                if (data.player1Id && !data.player2Id && data.player1Id !== myId) {
+                    updates.player1Id = null;
+                    updates.player1Symbol = null;
+                }
+                if (data.player2Id && !data.player1Id && data.player2Id !== myId) {
+                    updates.player2Id = null;
+                    updates.player2Symbol = null;
+                }
+
+                // Применяем очистку, если есть
+                if (Object.keys(updates).length > 0) {
+                    transaction.update(roomRef, updates);
+                    // После очистки нужно перечитать данные? Нет, транзакция сама обновит.
+                }
+
+                // Проверяем свободное место (после возможной очистки)
+                const freshData = (await transaction.get(roomRef)).data(); // перечитываем внутри транзакции
+                if (freshData.player1Id && freshData.player2Id) {
+                    throw new Error("Комната заполнена");
+                }
+
+                // Занимаем место
+                const joinUpdate = {};
+                if (!freshData.player1Id) joinUpdate.player1Id = myId;
+                else if (!freshData.player2Id) joinUpdate.player2Id = myId;
+                else throw new Error("Нет свободного места");
+
+                transaction.update(roomRef, joinUpdate);
+                return { success: true, roomId };
+            });
+
+            // Если транзакция успешна, подписываемся на обновления
             if (roomUnsubscribe) roomUnsubscribe();
             roomUnsubscribe = onSnapshot(roomRef, (docSnap) => {
                 if (!docSnap.exists()) return;
                 handleRoomUpdate(roomId, docSnap.data());
             });
+
+            currentRoomId = roomId;
             showGame(roomId);
-            return;
+
+        } catch (error) {
+            console.error("Ошибка при входе в комнату:", error);
+            alert("Не удалось войти в комнату: " + error.message);
         }
-
-        // Очистка призраков, если комната не полная
-        const updates = {};
-        if (data.player1Id && !data.player2Id && data.player1Id !== myId) {
-            updates.player1Id = null;
-            updates.player1Symbol = null;
-        }
-        if (data.player2Id && !data.player1Id && data.player2Id !== myId) {
-            updates.player2Id = null;
-            updates.player2Symbol = null;
-        }
-        if (Object.keys(updates).length > 0) {
-            await updateDoc(roomRef, updates);
-            const freshSnap = await getDoc(roomRef);
-            data = freshSnap.data();
-        }
-
-        // Проверяем, свободна ли теперь
-        if (data.player1Id && data.player2Id) {
-            alert('Комната заполнена');
-            return;
-        }
-
-        // Занимаем свободное место
-        const joinUpdate = {};
-        if (!data.player1Id) joinUpdate.player1Id = myId;
-        else if (!data.player2Id) joinUpdate.player2Id = myId;
-        else return;
-
-        await updateDoc(roomRef, joinUpdate);
-
-        // Подписываемся
-        if (roomUnsubscribe) roomUnsubscribe();
-        roomUnsubscribe = onSnapshot(roomRef, (docSnap) => {
-            if (!docSnap.exists()) return;
-            handleRoomUpdate(roomId, docSnap.data());
-        });
-
-        currentRoomId = roomId;
-        showGame(roomId);
     }
 
-    // ========== ВЫХОД ИЗ КОМНАТЫ ==========
+    // ========== ВЫХОД ИЗ КОМНАТЫ (С ТРАНЗАКЦИЕЙ) ==========
     async function leaveRoom() {
         if (!currentRoomId || isLeaving) return;
         isLeaving = true;
 
         const roomRef = doc(db, 'rooms', currentRoomId);
-        const snap = await getDoc(roomRef);
-        if (snap.exists()) {
-            const data = snap.data();
-            const update = {};
 
-            if (data.player1Id === myId) {
-                update.player1Id = null;
-                update.player1Symbol = null;
+        try {
+            await runTransaction(db, async (transaction) => {
+                const roomDoc = await transaction.get(roomRef);
+                if (!roomDoc.exists()) return;
+
+                const data = roomDoc.data();
+                const update = {};
+
+                if (data.player1Id === myId) {
+                    update.player1Id = null;
+                    update.player1Symbol = null;
+                }
+                if (data.player2Id === myId) {
+                    update.player2Id = null;
+                    update.player2Symbol = null;
+                }
+
+                // Сбрасываем игру
+                update.game = {
+                    board: Array(9).fill(null),
+                    currentTurn: 'X',
+                    winner: null,
+                    scores: { X: 0, O: 0 },
+                    status: 'waiting',
+                    rematch: { player1: false, player2: false }
+                };
+
+                transaction.update(roomRef, update);
+            });
+
+            // Отписываемся и переходим в лобби
+            if (roomUnsubscribe) {
+                roomUnsubscribe();
+                roomUnsubscribe = null;
             }
-            if (data.player2Id === myId) {
-                update.player2Id = null;
-                update.player2Symbol = null;
-            }
+            currentRoomId = null;
+            mySymbol = null;
+            showLobby();
 
-            // Сбрасываем игру
-            update.game = {
-                board: Array(9).fill(null),
-                currentTurn: 'X',
-                winner: null,
-                scores: { X: 0, O: 0 },
-                status: 'waiting',
-                rematch: { player1: false, player2: false }
-            };
-
-            await updateDoc(roomRef, update);
+        } catch (error) {
+            console.error("Ошибка при выходе из комнаты:", error);
+        } finally {
+            isLeaving = false;
         }
-
-        // Отписываемся и переходим в лобби
-        if (roomUnsubscribe) {
-            roomUnsubscribe();
-            roomUnsubscribe = null;
-        }
-        currentRoomId = null;
-        mySymbol = null;
-        isLeaving = false;
-        showLobby();
     }
 
     exitGameBtn.addEventListener('click', leaveRoom);
@@ -661,9 +671,7 @@
         const amPlayer1 = data.player1Id === myId;
         const amPlayer2 = data.player2Id === myId;
 
-        // Если нас нет в комнате — выходим в лобби
         if (!amPlayer1 && !amPlayer2) {
-            // Но проверяем, не вызвано ли это нашим собственным выходом (чтобы избежать лишнего алерта)
             if (!isLeaving && currentRoomId === roomId) {
                 alert('Вы покинули комнату');
             }
@@ -677,7 +685,6 @@
             return;
         }
 
-        // Если оба игрока на месте, но символы не назначены — назначаем
         if (data.player1Id && data.player2Id && !data.player1Symbol && !data.player2Symbol) {
             await assignSymbols(roomId, data.player1Id, data.player2Id);
             return;
@@ -689,17 +696,30 @@
         updateGameUI(data);
     }
 
+    // ========== НАЗНАЧЕНИЕ СИМВОЛОВ (С ТРАНЗАКЦИЕЙ) ==========
     async function assignSymbols(roomId, p1Id, p2Id) {
-        const random = Math.random() < 0.5;
-        const p1Symbol = random ? 'X' : 'O';
-        const p2Symbol = random ? 'O' : 'X';
         const roomRef = doc(db, 'rooms', roomId);
-        await updateDoc(roomRef, {
-            player1Symbol: p1Symbol,
-            player2Symbol: p2Symbol,
-            'game.status': 'playing',
-            'game.currentTurn': 'X'
-        });
+        try {
+            await runTransaction(db, async (transaction) => {
+                const roomDoc = await transaction.get(roomRef);
+                if (!roomDoc.exists()) return;
+                const data = roomDoc.data();
+                if (data.player1Symbol || data.player2Symbol) return; // уже назначены
+
+                const random = Math.random() < 0.5;
+                const p1Symbol = random ? 'X' : 'O';
+                const p2Symbol = random ? 'O' : 'X';
+
+                transaction.update(roomRef, {
+                    player1Symbol: p1Symbol,
+                    player2Symbol: p2Symbol,
+                    'game.status': 'playing',
+                    'game.currentTurn': 'X'
+                });
+            });
+        } catch (error) {
+            console.error("Ошибка назначения символов:", error);
+        }
     }
 
     // ========== ОТОБРАЖЕНИЕ ИГРОВОГО ИНТЕРФЕЙСА ==========
@@ -754,47 +774,54 @@
         }
     }
 
-    // ========== ХОД ==========
+    // ========== ХОД (С ТРАНЗАКЦИЕЙ) ==========
     async function makeMove(index) {
         if (!currentRoomId) return;
         const roomRef = doc(db, 'rooms', currentRoomId);
-        const snap = await getDoc(roomRef);
-        if (!snap.exists()) return;
-        const data = snap.data();
-        if (data.game.status !== 'playing') return;
-        if (data.game.currentTurn !== mySymbol) return;
-        if (data.game.board[index] !== null) return;
 
-        const newBoard = [...data.game.board];
-        newBoard[index] = mySymbol;
+        try {
+            await runTransaction(db, async (transaction) => {
+                const roomDoc = await transaction.get(roomRef);
+                if (!roomDoc.exists()) throw new Error("Комната не существует");
 
-        const winInfo = checkWinner(newBoard);
-        let newScores = { ...data.game.scores };
-        let newStatus = 'playing';
-        let nextTurn = mySymbol === 'X' ? 'O' : 'X';
-        let boardAfterWin = newBoard;
+                const data = roomDoc.data();
+                if (data.game.status !== 'playing') throw new Error("Игра не активна");
+                if (data.game.currentTurn !== mySymbol) throw new Error("Не ваш ход");
+                if (data.game.board[index] !== null) throw new Error("Клетка занята");
 
-        if (winInfo.winner) {
-            newScores[winInfo.winner] += 1;
-            if (newScores.X >= 3 || newScores.O >= 3) {
-                newStatus = 'finished';
-            } else {
-                boardAfterWin = Array(9).fill(null);
-                nextTurn = 'X';
-            }
-        } else if (winInfo.draw) {
-            boardAfterWin = Array(9).fill(null);
-            nextTurn = 'X';
+                const newBoard = [...data.game.board];
+                newBoard[index] = mySymbol;
+
+                const winInfo = checkWinner(newBoard);
+                let newScores = { ...data.game.scores };
+                let newStatus = 'playing';
+                let nextTurn = mySymbol === 'X' ? 'O' : 'X';
+                let boardAfterWin = newBoard;
+
+                if (winInfo.winner) {
+                    newScores[winInfo.winner] += 1;
+                    if (newScores.X >= 3 || newScores.O >= 3) {
+                        newStatus = 'finished';
+                    } else {
+                        boardAfterWin = Array(9).fill(null);
+                        nextTurn = 'X';
+                    }
+                } else if (winInfo.draw) {
+                    boardAfterWin = Array(9).fill(null);
+                    nextTurn = 'X';
+                }
+
+                transaction.update(roomRef, {
+                    'game.board': boardAfterWin,
+                    'game.currentTurn': nextTurn,
+                    'game.scores': newScores,
+                    'game.status': newStatus
+                });
+            });
+        } catch (error) {
+            console.error("Ошибка при ходе:", error);
+            alert("Не удалось сделать ход: " + error.message);
         }
-
-        const update = {
-            'game.board': boardAfterWin,
-            'game.currentTurn': nextTurn,
-            'game.scores': newScores,
-            'game.status': newStatus
-        };
-
-        await updateDoc(roomRef, update);
     }
 
     function checkWinner(board) {
@@ -813,37 +840,51 @@
         return { winner: null, draw: false };
     }
 
-    // ========== РЕМАТЧ ==========
+    // ========== РЕМАТЧ (С ТРАНЗАКЦИЕЙ) ==========
     rematchBtn.addEventListener('click', async () => {
         if (!currentRoomId) return;
         const roomRef = doc(db, 'rooms', currentRoomId);
-        const snap = await getDoc(roomRef);
-        if (!snap.exists()) return;
-        const data = snap.data();
-        const isPlayer1 = data.player1Id === myId;
-        const isPlayer2 = data.player2Id === myId;
 
-        const update = {};
-        if (isPlayer1) update['game.rematch.player1'] = true;
-        if (isPlayer2) update['game.rematch.player2'] = true;
+        try {
+            await runTransaction(db, async (transaction) => {
+                const roomDoc = await transaction.get(roomRef);
+                if (!roomDoc.exists()) return;
+                const data = roomDoc.data();
+                const isPlayer1 = data.player1Id === myId;
+                const isPlayer2 = data.player2Id === myId;
 
-        await updateDoc(roomRef, update);
+                const update = {};
+                if (isPlayer1) update['game.rematch.player1'] = true;
+                if (isPlayer2) update['game.rematch.player2'] = true;
+
+                transaction.update(roomRef, update);
+            });
+        } catch (error) {
+            console.error("Ошибка при рематче:", error);
+        }
     });
 
     async function resetGameAfterRematch(roomId) {
         if (!roomId) return;
         const roomRef = doc(db, 'rooms', roomId);
-        const snap = await getDoc(roomRef);
-        if (!snap.exists()) return;
-        const data = snap.data();
-        if (data.game.rematch?.player1 && data.game.rematch?.player2) {
-            await updateDoc(roomRef, {
-                'game.board': Array(9).fill(null),
-                'game.currentTurn': 'X',
-                'game.scores': { X:0, O:0 },
-                'game.status': 'playing',
-                'game.rematch': { player1: false, player2: false }
+
+        try {
+            await runTransaction(db, async (transaction) => {
+                const roomDoc = await transaction.get(roomRef);
+                if (!roomDoc.exists()) return;
+                const data = roomDoc.data();
+                if (data.game.rematch?.player1 && data.game.rematch?.player2) {
+                    transaction.update(roomRef, {
+                        'game.board': Array(9).fill(null),
+                        'game.currentTurn': 'X',
+                        'game.scores': { X:0, O:0 },
+                        'game.status': 'playing',
+                        'game.rematch': { player1: false, player2: false }
+                    });
+                }
             });
+        } catch (error) {
+            console.error("Ошибка сброса после рематча:", error);
         }
     }
 
