@@ -384,13 +384,13 @@
 <script type="module">
     // ========== FIREBASE С ВАШИМ КОНФИГОМ ==========
     import { initializeApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
-    import { getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot, collection, query } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-firestore.js";
+    import { getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot, collection, query, getDocs } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-firestore.js";
 
     const firebaseConfig = {
         apiKey: "AIzaSyDsiylf6dcAs8rstgLuO8ea6XHWruBKrJU",
         authDomain: "tic-tac-toe-rooms.firebaseapp.com",
         projectId: "tic-tac-toe-rooms",
-        storageBucket: "tic-tac-toe-rooms.appspot.com",  // исправлено!
+        storageBucket: "tic-tac-toe-rooms.appspot.com",
         messagingSenderId: "831043796703",
         appId: "1:831043796703:web:aa22df01b2ba9fdef0b36a"
     };
@@ -434,6 +434,31 @@
         lobbyDiv.style.display = 'none';
         gameDiv.style.display = 'block';
         gameRoomTitle.textContent = `Комната ${roomId}`;
+    }
+
+    // ========== ВОССТАНОВЛЕНИЕ СЕССИИ ==========
+    async function restoreSession() {
+        const roomsRef = collection(db, 'rooms');
+        const snapshot = await getDocs(roomsRef);
+        for (const docSnap of snapshot.docs) {
+            const data = docSnap.data();
+            if (data.player1Id === myId || data.player2Id === myId) {
+                // Нашли комнату, где мы уже есть
+                const roomId = docSnap.id;
+                currentRoomId = roomId;
+
+                // Подписываемся на обновления
+                if (roomUnsubscribe) roomUnsubscribe();
+                roomUnsubscribe = onSnapshot(doc(db, 'rooms', roomId), (docSnap) => {
+                    if (!docSnap.exists()) return;
+                    handleRoomUpdate(roomId, docSnap.data());
+                });
+
+                showGame(roomId);
+                return true;
+            }
+        }
+        return false; // сессия не восстановлена
     }
 
     // ========== ЛОББИ: ЗАГРУЗКА КОМНАТ ==========
@@ -488,8 +513,9 @@
 
     // ========== ВХОД В КОМНАТУ ==========
     async function joinRoom(roomId) {
+        // Если уже в комнате, сначала выходим
         if (currentRoomId) {
-            if (currentRoomId === roomId) return;
+            if (currentRoomId === roomId) return; // уже в этой комнате
             else await leaveRoom();
         }
 
@@ -498,18 +524,36 @@
         if (!roomSnap.exists()) return;
 
         const data = roomSnap.data();
+
+        // Проверяем, не занята ли комната
         if (data.player1Id && data.player2Id) {
-            alert('Комната заполнена');
-            return;
+            // Но может быть, это мы сами? Проверим:
+            if (data.player1Id === myId || data.player2Id === myId) {
+                // Мы уже здесь, просто подписываемся
+                // (такое может быть, если мы случайно вызвали joinRoom повторно)
+                if (roomUnsubscribe) roomUnsubscribe();
+                roomUnsubscribe = onSnapshot(roomRef, (docSnap) => {
+                    if (!docSnap.exists()) return;
+                    handleRoomUpdate(roomId, docSnap.data());
+                });
+                currentRoomId = roomId;
+                showGame(roomId);
+                return;
+            } else {
+                alert('Комната заполнена');
+                return;
+            }
         }
 
+        // Определяем, за кого войти
         const update = {};
         if (!data.player1Id) update.player1Id = myId;
         else if (!data.player2Id) update.player2Id = myId;
-        else return;
+        else return; // не должно случиться
 
         await updateDoc(roomRef, update);
 
+        // Подписываемся
         if (roomUnsubscribe) roomUnsubscribe();
         roomUnsubscribe = onSnapshot(roomRef, (docSnap) => {
             if (!docSnap.exists()) return;
@@ -520,7 +564,7 @@
         showGame(roomId);
     }
 
-    // ========== ИСПРАВЛЕННАЯ ФУНКЦИЯ ВЫХОДА ==========
+    // ========== ВЫХОД ИЗ КОМНАТЫ ==========
     async function leaveRoom() {
         if (!currentRoomId) return;
         const roomRef = doc(db, 'rooms', currentRoomId);
@@ -575,11 +619,13 @@
             return;
         }
 
+        // Если оба игрока на месте, но символы не назначены — назначить случайно
         if (data.player1Id && data.player2Id && !data.player1Symbol && !data.player2Symbol) {
             await assignSymbols(roomId, data.player1Id, data.player2Id);
             return;
         }
 
+        // Запоминаем свой символ
         if (amPlayer1) mySymbol = data.player1Symbol;
         if (amPlayer2) mySymbol = data.player2Symbol;
 
@@ -744,8 +790,15 @@
     }
 
     // ========== ИНИЦИАЛИЗАЦИЯ ==========
-    loadRooms();
-    showLobby();
+    // Сначала пытаемся восстановить сессию
+    (async () => {
+        await ensureRoomsExist();
+        const restored = await restoreSession();
+        if (!restored) {
+            loadRooms();
+            showLobby();
+        }
+    })();
 </script>
 </body>
 </html>
