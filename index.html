@@ -555,15 +555,15 @@
 
                 const data = roomDoc.data();
 
-                // Если мы уже числимся в комнате (возможно, после обновления) – просто подписываемся
+                // Если мы уже в комнате (возможно, после перезагрузки), просто выходим
                 if (data.player1Id === myId || data.player2Id === myId) {
-                    // Но в транзакции мы не можем подписаться, просто выходим с успехом
-                    // (на самом деле подписка установится после транзакции)
-                    return { alreadyInRoom: true, roomId };
+                    return; // транзакция завершена успешно
                 }
 
-                // Очистка призраков внутри транзакции
+                // Подготавливаем изменения: очистка призраков + занятие места
                 const updates = {};
+
+                // Очистка призраков, если они есть и комната не полная
                 if (data.player1Id && !data.player2Id && data.player1Id !== myId) {
                     updates.player1Id = null;
                     updates.player1Symbol = null;
@@ -573,29 +573,29 @@
                     updates.player2Symbol = null;
                 }
 
-                // Применяем очистку, если есть
-                if (Object.keys(updates).length > 0) {
-                    transaction.update(roomRef, updates);
-                    // После очистки нужно перечитать данные? Нет, транзакция сама обновит.
-                }
+                // Определяем, какие места будут заняты после очистки
+                const finalPlayer1 = updates.player1Id === null ? data.player1Id : null;
+                const finalPlayer2 = updates.player2Id === null ? data.player2Id : null;
 
-                // Проверяем свободное место (после возможной очистки)
-                const freshData = (await transaction.get(roomRef)).data(); // перечитываем внутри транзакции
-                if (freshData.player1Id && freshData.player2Id) {
+                if (finalPlayer1 && finalPlayer2) {
                     throw new Error("Комната заполнена");
                 }
 
-                // Занимаем место
-                const joinUpdate = {};
-                if (!freshData.player1Id) joinUpdate.player1Id = myId;
-                else if (!freshData.player2Id) joinUpdate.player2Id = myId;
-                else throw new Error("Нет свободного места");
+                // Занимаем свободное место
+                if (!finalPlayer1) {
+                    updates.player1Id = myId;
+                    updates.player1Symbol = null;
+                } else if (!finalPlayer2) {
+                    updates.player2Id = myId;
+                    updates.player2Symbol = null;
+                } else {
+                    throw new Error("Нет свободного места");
+                }
 
-                transaction.update(roomRef, joinUpdate);
-                return { success: true, roomId };
+                transaction.update(roomRef, updates);
             });
 
-            // Если транзакция успешна, подписываемся на обновления
+            // После успешной транзакции подписываемся
             if (roomUnsubscribe) roomUnsubscribe();
             roomUnsubscribe = onSnapshot(roomRef, (docSnap) => {
                 if (!docSnap.exists()) return;
@@ -648,7 +648,6 @@
                 transaction.update(roomRef, update);
             });
 
-            // Отписываемся и переходим в лобби
             if (roomUnsubscribe) {
                 roomUnsubscribe();
                 roomUnsubscribe = null;
