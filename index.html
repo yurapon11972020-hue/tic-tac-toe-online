@@ -14,8 +14,8 @@
 
         body {
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background-color: #ffffff; /* белый фон */
-            color: #1e1e1e; /* почти чёрный */
+            background-color: #ffffff;
+            color: #1e1e1e;
             min-height: 100vh;
             display: flex;
             align-items: center;
@@ -26,7 +26,7 @@
         #app {
             max-width: 1200px;
             width: 100%;
-            background-color: #f8f8f8; /* очень светлый серый */
+            background-color: #f8f8f8;
             border-radius: 40px;
             box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15);
             padding: 32px;
@@ -390,7 +390,7 @@
         apiKey: "AIzaSyDsiylf6dcAs8rstgLuO8ea6XHWruBKrJU",
         authDomain: "tic-tac-toe-rooms.firebaseapp.com",
         projectId: "tic-tac-toe-rooms",
-        storageBucket: "tic-tac-toe-rooms.firebasestorage.app",
+        storageBucket: "tic-tac-toe-rooms.appspot.com",  // исправлено!
         messagingSenderId: "831043796703",
         appId: "1:831043796703:web:aa22df01b2ba9fdef0b36a"
     };
@@ -520,7 +520,7 @@
         showGame(roomId);
     }
 
-    // ========== ВЫХОД ИЗ КОМНАТЫ ==========
+    // ========== ИСПРАВЛЕННАЯ ФУНКЦИЯ ВЫХОДА ==========
     async function leaveRoom() {
         if (!currentRoomId) return;
         const roomRef = doc(db, 'rooms', currentRoomId);
@@ -528,24 +528,35 @@
         if (snap.exists()) {
             const data = snap.data();
             const update = {};
+
+            // Удаляем уходящего игрока
             if (data.player1Id === myId) {
                 update.player1Id = null;
                 update.player1Symbol = null;
-                update.game.rematch.player1 = false;
             }
             if (data.player2Id === myId) {
                 update.player2Id = null;
                 update.player2Symbol = null;
-                update.game.rematch.player2 = false;
             }
-            if (!update.player1Id && !update.player2Id) {
-                update.game = { board: Array(9).fill(null), currentTurn: 'X', winner: null, scores: { X:0, O:0 }, status: 'waiting', rematch: { player1: false, player2: false } };
-            } else {
-                const remainingPlayers = (data.player1Id && data.player1Id !== myId ? 1 : 0) + (data.player2Id && data.player2Id !== myId ? 1 : 0);
-                if (remainingPlayers < 2) update['game.status'] = 'waiting';
-            }
+
+            // Сколько игроков останется после обновления?
+            const remainingAfter = (data.player1Id && data.player1Id !== myId ? 1 : 0) +
+                                   (data.player2Id && data.player2Id !== myId ? 1 : 0);
+
+            // В любом случае, если осталось меньше двух игроков — сбрасываем игру в ноль
+            update.game = {
+                board: Array(9).fill(null),
+                currentTurn: 'X',
+                winner: null,
+                scores: { X: 0, O: 0 },
+                status: 'waiting',
+                rematch: { player1: false, player2: false }
+            };
+
             await updateDoc(roomRef, update);
         }
+
+        // Отписываемся и возвращаемся в лобби
         if (roomUnsubscribe) { roomUnsubscribe(); roomUnsubscribe = null; }
         currentRoomId = null;
         mySymbol = null;
