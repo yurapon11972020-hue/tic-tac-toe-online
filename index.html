@@ -5,9 +5,331 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Крестики-нолики · Комнаты</title>
     <style>
-        /* Стили остаются без изменений — они уже есть в вашем проекте */
-        /* Вставьте сюда ваш полный CSS из предыдущей версии */
-        /* ... (для краткости я не копирую их, но в вашем проекте они уже есть) */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            transition: background-color 0.2s ease, color 0.1s ease, border-color 0.2s ease, box-shadow 0.2s ease, transform 0.1s ease;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: #ffffff;
+            color: #1e1e1e;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        #app {
+            max-width: 1200px;
+            width: 100%;
+            background-color: #f8f8f8;
+            border-radius: 40px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15);
+            padding: 32px;
+            border: 1px solid #e0e0e0;
+        }
+
+        /* Лобби */
+        #lobby h1 {
+            font-weight: 400;
+            font-size: 2.4rem;
+            letter-spacing: -0.5px;
+            margin-bottom: 32px;
+            color: #2a2a2a;
+            border-left: 5px solid #9e9e9e;
+            padding-left: 24px;
+        }
+
+        .rooms-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 24px;
+            margin-bottom: 48px;
+        }
+
+        .room-card {
+            background-color: #ffffff;
+            border-radius: 28px;
+            padding: 28px 16px;
+            text-align: center;
+            border: 1px solid #d6d6d6;
+            box-shadow: 0 6px 0 #c0c0c0;
+            transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s;
+        }
+
+        .room-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 0 #b0b0b0;
+            border-color: #a0a0a0;
+        }
+
+        .room-card.full {
+            opacity: 0.5;
+            pointer-events: none;
+            filter: grayscale(1);
+        }
+
+        .room-card h3 {
+            font-size: 2rem;
+            font-weight: 350;
+            color: #333;
+            margin-bottom: 12px;
+        }
+
+        .room-card p {
+            font-size: 1.2rem;
+            color: #5e5e5e;
+            margin-bottom: 24px;
+        }
+
+        .room-card button {
+            background-color: #eaeaea;
+            border: 1px solid #bdbdbd;
+            color: #1e1e1e;
+            font-size: 1.3rem;
+            padding: 14px 32px;
+            border-radius: 50px;
+            cursor: pointer;
+            font-weight: 500;
+            box-shadow: 0 4px 0 #a0a0a0;
+            transition: all 0.1s ease;
+        }
+
+        .room-card button:hover:not(:disabled) {
+            background-color: #d5d5d5;
+            border-color: #8f8f8f;
+            transform: scale(0.97);
+            box-shadow: 0 2px 0 #8a8a8a;
+        }
+
+        .room-card button:disabled {
+            opacity: 0.4;
+            cursor: default;
+            box-shadow: none;
+        }
+
+        .rules {
+            background-color: #ffffff;
+            padding: 32px 36px;
+            border-radius: 32px;
+            border: 1px solid #dbdbdb;
+            box-shadow: inset 0 1px 4px #eeeeee;
+        }
+
+        .rules h2 {
+            font-weight: 400;
+            color: #2b2b2b;
+            margin-bottom: 18px;
+            font-size: 2rem;
+        }
+
+        .rules p {
+            color: #4a4a4a;
+            line-height: 1.7;
+            font-size: 1.2rem;
+            max-width: 800px;
+        }
+
+        /* Игровой экран */
+        #game {
+            display: none;
+        }
+
+        .game-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+            gap: 16px;
+        }
+
+        .room-info h2 {
+            font-size: 2rem;
+            font-weight: 350;
+            color: #2d2d2d;
+        }
+
+        .exit-btn {
+            background: #ffffff;
+            border: 1px solid #c0c0c0;
+            color: #2a2a2a;
+            font-size: 1.2rem;
+            padding: 12px 32px;
+            border-radius: 40px;
+            cursor: pointer;
+            box-shadow: 0 4px 0 #b0b0b0;
+            transition: 0.1s;
+        }
+
+        .exit-btn:hover {
+            background: #f0f0f0;
+            border-color: #9e9e9e;
+            transform: scale(0.97);
+            box-shadow: 0 2px 0 #a0a0a0;
+        }
+
+        .player-badge {
+            background-color: #ffffff;
+            padding: 16px 32px;
+            border-radius: 60px;
+            display: inline-flex;
+            align-items: center;
+            gap: 18px;
+            border: 1px solid #cacaca;
+            margin-bottom: 25px;
+            font-size: 1.5rem;
+            box-shadow: 0 4px 0 #c0c0c0;
+        }
+
+        .symbol-icon {
+            font-size: 2.2rem;
+            font-weight: 600;
+            background: #ececec;
+            width: 70px;
+            height: 70px;
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border: 2px solid #b0b0b0;
+            color: #1e1e1e;
+        }
+
+        .turn-indicator {
+            font-size: 1.7rem;
+            margin-left: 8px;
+            color: #3d3d3d;
+            font-weight: 300;
+            background: #f0f0f0;
+            padding: 8px 26px;
+            border-radius: 50px;
+            display: inline-block;
+            border: 1px solid #d2d2d2;
+        }
+
+        .scores {
+            display: flex;
+            gap: 50px;
+            justify-content: center;
+            font-size: 2rem;
+            background: #ffffff;
+            padding: 16px 40px;
+            border-radius: 70px;
+            margin-bottom: 25px;
+            border: 1px solid #c4c4c4;
+            box-shadow: 0 4px 0 #b8b8b8;
+        }
+
+        .score-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .score-value {
+            background: #eaeaea;
+            padding: 6px 26px;
+            border-radius: 40px;
+            border: 1px solid #acacac;
+            font-weight: 500;
+        }
+
+        .board {
+            display: grid;
+            grid-template-columns: repeat(3, 120px);
+            gap: 12px;
+            justify-content: center;
+            margin: 35px 0;
+        }
+
+        .cell {
+            width: 120px;
+            height: 120px;
+            background-color: #ffffff;
+            border: 2px solid #c0c0c0;
+            border-radius: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 5rem;
+            font-weight: 300;
+            color: #262626;
+            cursor: pointer;
+            box-shadow: 0 6px 0 #b0b0b0;
+            transition: 0.08s linear;
+        }
+
+        .cell:not(.disabled):hover {
+            background-color: #f5f5f5;
+            border-color: #9c9c9c;
+            transform: scale(0.97);
+            box-shadow: 0 3px 0 #a0a0a0;
+        }
+
+        .cell.disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+            box-shadow: none;
+            border-color: #d4d4d4;
+        }
+
+        .rematch-area {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 18px;
+            margin-top: 20px;
+        }
+
+        #rematch-btn {
+            background: #f0f0f0;
+            border: 2px solid #b5b5b5;
+            color: #1f1f1f;
+            font-size: 1.9rem;
+            padding: 16px 56px;
+            border-radius: 70px;
+            cursor: pointer;
+            box-shadow: 0 6px 0 #a8a8a8;
+            transition: 0.1s;
+            width: fit-content;
+            font-weight: 400;
+        }
+
+        #rematch-btn:not(:disabled):hover {
+            background: #e2e2e2;
+            border-color: #8f8f8f;
+            transform: scale(0.97);
+            box-shadow: 0 3px 0 #8a8a8a;
+        }
+
+        #rematch-btn:disabled {
+            opacity: 0.3;
+            cursor: default;
+            box-shadow: none;
+            border-color: #cfcfcf;
+        }
+
+        #rematch-status {
+            font-size: 1.3rem;
+            color: #5a5a5a;
+            background: #eeeeee;
+            padding: 8px 28px;
+            border-radius: 50px;
+            border: 1px solid #c9c9c9;
+        }
+
+        .footer-note {
+            color: #b0b0b0;
+            margin-top: 40px;
+            text-align: center;
+            font-size: 0.9rem;
+            letter-spacing: 1px;
+        }
     </style>
 </head>
 <body>
